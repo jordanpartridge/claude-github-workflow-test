@@ -1,1 +1,41 @@
-aW1wb3J0IHsgT2N0b2tpdCB9IGZyb20gJ0BvY3Rva2l0L3Jlc3QnOwppbXBvcnQgeyByZWFkRmlsZSwgd3JpdGVGaWxlIH0gZnJvbSAnZnMvcHJvbWlzZXMnOwppbXBvcnQgeyBqb2luIH0gZnJvbSAncGF0aCc7CgpleHBvcnQgY2xhc3MgR2l0SHViV29ya2Zsb3cgewogIHByaXZhdGUgb2N0b2tpdDogT2N0b2tpdDsKICBwcml2YXRlIGNvbmZpZzogV29ya2Zsb3dDb25maWc7CiAgCiAgY29uc3RydWN0b3IoKSB7CiAgICB0aGlzLm9jdG9raXQgPSBuZXcgT2N0b2tpdCh7CiAgICAgIGF1dGg6IHByb2Nlc3MuZW52LkdJVEhVQl9UT0tFTgogICAgfSk7CiAgICB0aGlzLmxvYWRDb25maWcoKTsKICB9CgogIGFzeW5jIHN5bmNJc3N1ZVN0YXRlKGlzc3VlTnVtYmVyOiBudW1iZXIpOiBQcm9taXNlPHZvaWQ+IHsKICAgIGNvbnN0IGlzc3VlID0gYXdhaXQgdGhpcy5nZXRJc3N1ZShpc3N1ZU51bWJlcik7CiAgICBjb25zdCBicmFuY2ggPSBhd2FpdCB0aGlzLmdldExpbmtlZEJyYW5jaChpc3N1ZU51bWJlcik7CiAgICBjb25zdCBwciA9IGF3YWl0IHRoaXMuZ2V0TGlua2VkUFIoYnJhbmNoKTsKICAgIAogICAgYXdhaXQgdGhpcy51cGRhdGVMb2NhbFN0YXRlKHsKICAgICAgaXNzdWUsCiAgICAgIGJyYW5jaCwKICAgICAgcHIsCiAgICAgIGxhc3RTeW5jOiBuZXcgRGF0ZSgpLnRvSVNPU3RyaW5nKCkKICAgIH0pOwoKICAgIGF3YWl0IHRoaXMudXBkYXRlSXNzdWVQcm9ncmVzcyhpc3N1ZU51bWJlcik7CiAgfQoKICBwcml2YXRlIGFzeW5jIGdldExpbmtlZEJyYW5jaChpc3N1ZU51bWJlcjogbnVtYmVyKTogUHJvbWlzZTxzdHJpbmcgfCBudWxsPiB7CiAgICBjb25zdCB7IGRhdGE6IGJyYW5jaGVzIH0gPSBhd2FpdCB0aGlzLm9jdG9raXQucmVwb3MubGlzdEJyYW5jaGVzKHsKICAgICAgb3duZXI6IHRoaXMuY29uZmlnLm93bmVyLAogICAgICByZXBvOiB0aGlzLmNvbmZpZy5yZXBvCiAgICB9KTsKCiAgICByZXR1cm4gYnJhbmNoZXMuZmluZChicmFuY2ggPT4gCiAgICAgIGJyYW5jaC5uYW1lLmluY2x1ZGVzKGAke2lzc3VlTnVtYmVyfS1gKQogICAgKT8ubmFtZSB8fCBudWxsOwogIH0KfQ==
+import { Octokit } from '@octokit/rest';
+import { readFile, writeFile } from 'fs/promises';
+import { join } from 'path';
+
+export class GitHubWorkflow {
+  private octokit: Octokit;
+  private config: WorkflowConfig;
+  
+  constructor() {
+    this.octokit = new Octokit({
+      auth: process.env.GITHUB_TOKEN
+    });
+    this.loadConfig();
+  }
+
+  async syncIssueState(issueNumber: number): Promise<void> {
+    const issue = await this.getIssue(issueNumber);
+    const branch = await this.getLinkedBranch(issueNumber);
+    const pr = await this.getLinkedPR(branch);
+    
+    await this.updateLocalState({
+      issue,
+      branch,
+      pr,
+      lastSync: new Date().toISOString()
+    });
+
+    await this.updateIssueProgress(issueNumber);
+  }
+
+  private async getLinkedBranch(issueNumber: number): Promise<string | null> {
+    const { data: branches } = await this.octokit.repos.listBranches({
+      owner: this.config.owner,
+      repo: this.config.repo
+    });
+
+    return branches.find(branch => 
+      branch.name.includes(`${issueNumber}-`)
+    )?.name || null;
+  }
+}
